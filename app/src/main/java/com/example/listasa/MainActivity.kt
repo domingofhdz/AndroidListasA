@@ -235,6 +235,40 @@ fun MenuContent(navController: NavHostController, modifier: Modifier) {
     }
 }
 
+data class ModeloProducto (
+    val id: Long,
+    val nombre: String,
+    val precio: Double,
+    val existencias: Int
+)
+interface ApiService {
+    @POST("servicio.php?iniciarSesion")
+    @FormUrlEncoded
+    suspend fun agregarRegistro(
+        @Field("usuario") usuario: String,
+        @Field("contrasena") contrasena: String
+    ): Response<String>
+
+    @GET("servicio.php?registros")
+    suspend fun registros(): List<ModeloRegistro>
+
+    @POST("servicio.php?agregarRegistro")
+    @FormUrlEncoded
+    suspend fun agregarRegistro(
+        @Field("dato1") dato1: String,
+        @Field("dato2") dato2: Double,
+        @Field("dato3") dato3: Int
+    ): Response<Unit>
+}
+
+val retrofit = Retrofit.Builder()
+    .baseUrl("AQUI VA LA URL GENERADA POR EL COMANDO DE CLOUDFLARED TUNNELS")
+    .addConverterFactory(ScalarsConverterFactory.create())
+    .addConverterFactory(GsonConverterFactory.create())
+    .build()
+
+val api = retrofit.create(ApiService::class.java)
+
 @Composable
 fun LstProductosContent(navController: NavHostController, modifier: Modifier) {
     data class Producto(val nombre: String, val precio: Double, val existencias: Int)
