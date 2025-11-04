@@ -2,6 +2,7 @@
 package com.example.listasa
 
 import android.os.Bundle
+import android.util.Log
 import android.widget.Toast
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
@@ -30,6 +31,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -49,6 +51,15 @@ import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.compose.rememberNavController
 import com.example.listasa.ui.theme.ListasATheme
+import kotlinx.coroutines.launch
+import retrofit2.Response
+import retrofit2.Retrofit
+import retrofit2.converter.gson.GsonConverterFactory
+import retrofit2.converter.scalars.ScalarsConverterFactory
+import retrofit2.http.Field
+import retrofit2.http.FormUrlEncoded
+import retrofit2.http.GET
+import retrofit2.http.POST
 
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -85,6 +96,8 @@ fun LoginContent(navController: NavHostController, modifier: Modifier) {
 
     var usuario: String by remember { mutableStateOf("") }
     var contrasena: String by remember { mutableStateOf("") }
+
+    val scope = rememberCoroutineScope()
 
     Column(
         modifier = modifier
@@ -143,8 +156,23 @@ fun LoginContent(navController: NavHostController, modifier: Modifier) {
 
         Button(
             onClick = {
-                Toast.makeText(context, "Usuario: ${usuario}", Toast.LENGTH_SHORT).show()
-                Toast.makeText(context, "Contraseña: ${contrasena}", Toast.LENGTH_SHORT).show()
+
+                scope.launch {
+                    try {
+                        val respuesta : Response<String> = api.iniciarSesion(usuario, contrasena)
+                        if (respuesta.body() == "correcto") {
+                            Toast.makeText(context, "Inicio de sesión con éxito.", Toast.LENGTH_SHORT).show()
+                            navController.navigate("menu")
+                        }
+                        else {
+                            Toast.makeText(context, "Inicio de sesión incorrecto.", Toast.LENGTH_SHORT).show()
+                        }
+                    }
+                    catch (e: Exception) {
+                        Log.e("API", "Error al intentar iniciar sesión: ${e.message}")
+                    }
+                }
+
             },
             modifier = Modifier.align(Alignment.End)
         ) {
@@ -236,24 +264,23 @@ fun MenuContent(navController: NavHostController, modifier: Modifier) {
     }
 }
 
-data class ModeloProducto (
-    val id: Long,
-    val nombre: String,
-    val precio: Double,
-    val existencias: Int
+data class ModeloRegistro(
+    val dato1: String,
+    val dato2: Double,
+    val dato3: Int
 )
 interface ApiService {
     @POST("servicio.php?iniciarSesion")
     @FormUrlEncoded
-    suspend fun agregarRegistro(
+    suspend fun iniciarSesion(
         @Field("usuario") usuario: String,
         @Field("contrasena") contrasena: String
     ): Response<String>
 
-    @GET("servicio.php?registros")
-    suspend fun registros(): List<ModeloRegistro>
+    @GET("servicio.php?productos")
+    suspend fun productos(): List<ModeloRegistro>
 
-    @POST("servicio.php?agregarRegistro")
+    @POST("servicio.php?agregarProducto")
     @FormUrlEncoded
     suspend fun agregarRegistro(
         @Field("dato1") dato1: String,
@@ -263,7 +290,7 @@ interface ApiService {
 }
 
 val retrofit = Retrofit.Builder()
-    .baseUrl("AQUI VA LA URL GENERADA POR EL COMANDO DE CLOUDFLARED TUNNELS")
+    .baseUrl("https://identity-zen-driving-shipment.trycloudflare.com/api/")
     .addConverterFactory(ScalarsConverterFactory.create())
     .addConverterFactory(GsonConverterFactory.create())
     .build()
