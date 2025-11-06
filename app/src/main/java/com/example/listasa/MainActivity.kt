@@ -27,6 +27,7 @@ import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextField
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.runtime.mutableStateOf
@@ -61,6 +62,48 @@ import retrofit2.http.FormUrlEncoded
 import retrofit2.http.GET
 import retrofit2.http.POST
 
+
+data class ModeloProducto (
+    val id: Int,
+    val nombre: String,
+    val precio: Double,
+    val existencias: Int
+)
+interface ApiService {
+    @POST("servicio.php?iniciarSesion")
+    @FormUrlEncoded
+    suspend fun iniciarSesion(
+        @Field("usuario") usuario: String,
+        @Field("contrasena") contrasena: String
+    ): Response<String>
+
+    @GET("servicio.php?productos")
+    suspend fun productos(): List<ModeloProducto>
+
+    @POST("servicio.php?agregarProducto")
+    @FormUrlEncoded
+    suspend fun agregarProducto(
+        @Field("nombre") nombre: String,
+        @Field("precio") precio: Double,
+        @Field("existencias") existencias: Int
+    ): Response<Unit>
+
+    @POST("servicio.php?eliminarProducto")
+    @FormUrlEncoded
+    suspend fun eliminarProducto(
+        @Field("id") id: Int
+    ): Response<String>
+}
+
+val retrofit = Retrofit.Builder()
+    .baseUrl("https://dfhash.com/temporal/practicasDAM/")
+    .addConverterFactory(ScalarsConverterFactory.create())
+    .addConverterFactory(GsonConverterFactory.create())
+    .build()
+
+val api = retrofit.create(ApiService::class.java)
+
+
 class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -93,11 +136,10 @@ fun AppContent(modifier: Modifier = Modifier) {
 @Composable
 fun LoginContent(navController: NavHostController, modifier: Modifier) {
     val context = LocalContext.current
+    val scope = rememberCoroutineScope()
 
     var usuario: String by remember { mutableStateOf("") }
     var contrasena: String by remember { mutableStateOf("") }
-
-    val scope = rememberCoroutineScope()
 
     Column(
         modifier = modifier
@@ -193,8 +235,6 @@ fun MenuContent(navController: NavHostController, modifier: Modifier) {
         horizontalAlignment = Alignment.Start,
         verticalArrangement = Arrangement.Top
     ) {
-
-
         Button(
             onClick = {
                 navController.navigate("login")
@@ -221,6 +261,7 @@ fun MenuContent(navController: NavHostController, modifier: Modifier) {
             modifier = Modifier.align(Alignment.CenterHorizontally)
         )
         Spacer(modifier = Modifier.height(16.dp))
+
 
         Button(
             onClick = {
@@ -264,52 +305,31 @@ fun MenuContent(navController: NavHostController, modifier: Modifier) {
     }
 }
 
-data class ModeloRegistro(
-    val dato1: String,
-    val dato2: Double,
-    val dato3: Int
-)
-interface ApiService {
-    @POST("servicio.php?iniciarSesion")
-    @FormUrlEncoded
-    suspend fun iniciarSesion(
-        @Field("usuario") usuario: String,
-        @Field("contrasena") contrasena: String
-    ): Response<String>
-
-    @GET("servicio.php?productos")
-    suspend fun productos(): List<ModeloRegistro>
-
-    @POST("servicio.php?agregarProducto")
-    @FormUrlEncoded
-    suspend fun agregarRegistro(
-        @Field("dato1") dato1: String,
-        @Field("dato2") dato2: Double,
-        @Field("dato3") dato3: Int
-    ): Response<Unit>
-}
-
-val retrofit = Retrofit.Builder()
-    .baseUrl("https://identity-zen-driving-shipment.trycloudflare.com/api/")
-    .addConverterFactory(ScalarsConverterFactory.create())
-    .addConverterFactory(GsonConverterFactory.create())
-    .build()
-
-val api = retrofit.create(ApiService::class.java)
-
 @Composable
 fun LstProductosContent(navController: NavHostController, modifier: Modifier) {
-    data class Producto(val nombre: String, val precio: Double, val existencias: Int)
+    val context = LocalContext.current
+    val scrollState = rememberScrollState()
+    val scope = rememberCoroutineScope()
+
     val productos = remember {
-        mutableStateListOf(
-            Producto("Sponch Fresa", 23.0, 10),
-            Producto("Emperador Combinado", 22.0, 10),
-            Producto("Florentinas Cajeta", 20.0, 8)
+        mutableStateListOf<ModeloProducto>(
+            // Producto("Sponch Fresa", 23.0, 10),
+            // Producto("Emperador Combinado", 22.0, 10),
+            // Producto("Florentinas Cajeta", 20.0, 8)
         )
     }
     // productos[2] = Producto("Florentinas Fresa", 20.0, 5)
 
-    val scrollState = rememberScrollState()
+    LaunchedEffect(Unit) {
+        try {
+            val respuesta = api.productos()
+            productos.clear()
+            productos.addAll(respuesta)
+        }
+        catch (e: Exception) {
+            Log.e("API", "Error al cargar productos: ${e.message}")
+        }
+    }
 
     Column(
         modifier = modifier
@@ -361,7 +381,7 @@ fun LstProductosContent(navController: NavHostController, modifier: Modifier) {
 
         Button(
             onClick = {
-                productos.add(Producto("Canelitas", 21.0, 12))
+                // productos.add(Producto("Canelitas", 21.0, 12))
             },
             colors = ButtonDefaults.buttonColors(
                 containerColor = Color.Black,
@@ -378,6 +398,7 @@ fun LstProductosContent(navController: NavHostController, modifier: Modifier) {
         }
         Spacer(modifier = Modifier.height(16.dp))
         Row {
+            Text("Id", modifier = Modifier.width(150.dp), fontWeight = FontWeight.Bold)
             Text("Nombre", modifier = Modifier.width(150.dp), fontWeight = FontWeight.Bold)
             Text("Precio", modifier = Modifier.width(100.dp), fontWeight = FontWeight.Bold)
             Text("Existencias", modifier = Modifier.width(100.dp), fontWeight = FontWeight.Bold)
@@ -391,6 +412,9 @@ fun LstProductosContent(navController: NavHostController, modifier: Modifier) {
                 modifier = Modifier
                     .background(bgColor)
             ) {
+                Text(producto.id.toString(), modifier = Modifier
+                    .width(150.dp)
+                )
                 Text(producto.nombre, modifier = Modifier
                     .width(150.dp)
                 )
@@ -401,7 +425,24 @@ fun LstProductosContent(navController: NavHostController, modifier: Modifier) {
                     .width(100.dp)
                 )
                 Button(onClick = {
-                    productos.removeAt(index)
+                    val id : Int = productos[index].id
+
+                    scope.launch {
+                        try {
+                            val respuesta : Response<String> = api.eliminarProducto(id)
+                            if (respuesta.body() == "correcto") {
+                                Toast.makeText(context, "Producto eliminado con éxito.", Toast.LENGTH_SHORT).show()
+                                productos.removeAt(index)
+                            }
+                            else {
+                                Toast.makeText(context, "Error al eliminar producto.", Toast.LENGTH_SHORT).show()
+                            }
+                        }
+                        catch (e: Exception) {
+                            Log.e("API", "Error al intentar eliminar producto: ${e.message}")
+                        }
+                    }
+
                 }) {
                     Text("Eliminar")
                 }
@@ -447,6 +488,7 @@ fun FrmProductosContent(navController: NavHostController, modifier: Modifier) {
         }
         Spacer(modifier = Modifier.height(16.dp))
 
+
         Text(text = "Nombre:")
         TextField(
             value = nombre,
@@ -486,6 +528,7 @@ fun FrmProductosContent(navController: NavHostController, modifier: Modifier) {
         ) {
             Text("Enviar")
         }
+
 
     }
 }
