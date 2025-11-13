@@ -20,9 +20,15 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Divider
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
+import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.ExposedDropdownMenuBox
+import androidx.compose.material3.ExposedDropdownMenuDefaults
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextField
@@ -62,13 +68,32 @@ import retrofit2.http.FormUrlEncoded
 import retrofit2.http.GET
 import retrofit2.http.POST
 
+import android.content.Context
+import android.content.SharedPreferences
+
+fun setSessionValue(context: Context, key: String, value: String) {
+    val sharedPrefs: SharedPreferences = context.getSharedPreferences("sharedPrefs", Context.MODE_PRIVATE)
+    val editor = sharedPrefs.edit()
+    editor.putString(key, value)
+    editor.apply()
+    // setSessionValue(context, "sesionIniciada", "yes")
+}
+
+fun getSessionValue(context: Context, key: String, defaultValue: String): String? {
+    val sharedPrefs: SharedPreferences = context.getSharedPreferences("sharedPrefs", Context.MODE_PRIVATE)
+    return sharedPrefs.getString(key, defaultValue)
+    // val sesionIniciada : String = getSessionValue(context, "sesionIniciada", "no")
+}
 
 data class ModeloProducto (
     val id: Int,
     val nombre: String,
+    val idCategoria: Int,
+    val nombreCategoria: String,
     val precio: Double,
     val existencias: Int
 )
+data class OpcionCategoria(val value: String, val label: String)
 interface ApiService {
     @POST("servicio.php?iniciarSesion")
     @FormUrlEncoded
@@ -79,11 +104,14 @@ interface ApiService {
 
     @GET("servicio.php?productos")
     suspend fun productos(): List<ModeloProducto>
+    @GET("servicio.php?categoriasCombo")
+    suspend fun categoriasCombo(): List<OpcionCategoria>
 
     @POST("servicio.php?agregarProducto")
     @FormUrlEncoded
     suspend fun agregarProducto(
         @Field("nombre") nombre: String,
+        @Field("categoria") categoria: Int,
         @Field("precio") precio: Double,
         @Field("existencias") existencias: Int
     ): Response<String>
@@ -93,6 +121,7 @@ interface ApiService {
     suspend fun modificarProducto(
         @Field("id") id: Int,
         @Field("nombre") nombre: String,
+        @Field("categoria") categoria: Int,
         @Field("precio") precio: Double,
         @Field("existencias") existencias: Int
     ): Response<String>
@@ -133,7 +162,17 @@ class MainActivity : ComponentActivity() {
 fun AppContent(modifier: Modifier = Modifier) {
     val navController = rememberNavController()
 
-    NavHost(navController = navController, startDestination = "login") {
+    val context = LocalContext.current
+    val sesionIniciada: String? = getSessionValue(context, "sesionIniciada", "no")
+    var startDestination: String = "login"
+
+    if (sesionIniciada == "yes") {
+        startDestination = "menu"
+    }
+
+    // startDestination = "lstProductos"
+
+    NavHost(navController = navController, startDestination = startDestination) {
         composable("login") { LoginContent(navController, modifier) }
         composable("menu") { MenuContent(navController, modifier) }
         composable("lstProductos") { LstProductosContent(navController, modifier) }
@@ -158,26 +197,6 @@ fun LoginContent(navController: NavHostController, modifier: Modifier) {
         horizontalAlignment = Alignment.Start,
         verticalArrangement = Arrangement.Top
     ) {
-        Button(
-            onClick = {
-                navController.navigate("menu")
-            },
-            colors = ButtonDefaults.buttonColors(
-                containerColor = Color.Transparent,
-                contentColor = Color.Blue
-            ),
-            modifier = Modifier.fillMaxWidth()
-        ) {
-            Text(
-                "Menú",
-                style = TextStyle(textDecoration = TextDecoration.Underline),
-                textAlign = TextAlign.Start,
-                modifier = Modifier.fillMaxWidth()
-            )
-        }
-        Spacer(modifier = Modifier.height(16.dp))
-
-
         Text(
             text = "Inicio de Sesión",
             fontSize = 20.sp,
@@ -214,6 +233,7 @@ fun LoginContent(navController: NavHostController, modifier: Modifier) {
                         if (respuesta.body() == "correcto") {
                             Toast.makeText(context, "Inicio de sesión con éxito.", Toast.LENGTH_SHORT).show()
                             navController.navigate("menu")
+                            setSessionValue(context, "sesionIniciada", "yes")
                         }
                         else {
                             Toast.makeText(context, "Inicio de sesión incorrecto.", Toast.LENGTH_SHORT).show()
@@ -244,25 +264,6 @@ fun MenuContent(navController: NavHostController, modifier: Modifier) {
         horizontalAlignment = Alignment.Start,
         verticalArrangement = Arrangement.Top
     ) {
-        Button(
-            onClick = {
-                navController.navigate("login")
-            },
-            colors = ButtonDefaults.buttonColors(
-                containerColor = Color.Transparent,
-                contentColor = Color.Blue
-            ),
-            modifier = Modifier.fillMaxWidth()
-        ) {
-            Text(
-                "Login",
-                style = TextStyle(textDecoration = TextDecoration.Underline),
-                textAlign = TextAlign.Start,
-                modifier = Modifier.fillMaxWidth()
-            )
-        }
-        Spacer(modifier = Modifier.height(16.dp))
-
         Text(
             text = "Menú",
             fontSize = 20.sp,
@@ -314,6 +315,7 @@ fun MenuContent(navController: NavHostController, modifier: Modifier) {
     }
 }
 
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun LstProductosContent(navController: NavHostController, modifier: Modifier) {
     val context = LocalContext.current
@@ -335,11 +337,24 @@ fun LstProductosContent(navController: NavHostController, modifier: Modifier) {
     var precio: String by remember { mutableStateOf("") }
     var existencias: String by remember { mutableStateOf("") }
 
+    val categoriaOpciones = remember {
+        mutableStateListOf<OpcionCategoria>(
+            OpcionCategoria("", "Selecciona una opción"),
+            // OpcionCategoria("1", "Galletas"),
+            // OpcionCategoria("2", "Refrescos")
+        )
+    }
+    var categoriaExpandido by remember { mutableStateOf(false) }
+    var categoria by remember { mutableStateOf(categoriaOpciones[0]) }
+
     LaunchedEffect(Unit) {
         try {
             val respuesta = api.productos()
             productos.clear()
             productos.addAll(respuesta)
+            val respuesta2 = api.categoriasCombo()
+            categoriaOpciones.clear()
+            categoriaOpciones.addAll(respuesta2)
         }
         catch (e: Exception) {
             Log.e("API", "Error al cargar productos: ${e.message}")
@@ -351,6 +366,7 @@ fun LstProductosContent(navController: NavHostController, modifier: Modifier) {
             .fillMaxSize()
             .padding(24.dp)
             .horizontalScroll(scrollState)
+            .verticalScroll(scrollState)
             .padding(8.dp),
         horizontalAlignment = Alignment.Start,
         verticalArrangement = Arrangement.Top
@@ -435,6 +451,41 @@ fun LstProductosContent(navController: NavHostController, modifier: Modifier) {
         )
         Spacer(modifier = Modifier.height(16.dp))
 
+        Text(text = "Categoría:")
+        ExposedDropdownMenuBox(
+            expanded = categoriaExpandido,
+            onExpandedChange = { categoriaExpandido = !categoriaExpandido }
+        ) {
+            TextField(
+                value = categoria.label,
+                onValueChange = {},
+                readOnly = true,
+                label = { Text("Selecciona una opción") },
+                trailingIcon = {
+                    ExposedDropdownMenuDefaults.TrailingIcon(expanded = categoriaExpandido)
+                },
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .menuAnchor()
+            )
+
+            DropdownMenu(
+                expanded = categoriaExpandido,
+                onDismissRequest = { categoriaExpandido = false }
+            ) {
+                categoriaOpciones.forEach { opcion ->
+                    DropdownMenuItem(
+                        text = { Text(opcion.label) },
+                        onClick = {
+                            categoria = opcion
+                            categoriaExpandido = false
+                        }
+                    )
+                }
+            }
+        }
+        Spacer(modifier = Modifier.height(16.dp))
+
         Text(text = "Precio:")
         TextField(
             value = precio,
@@ -463,22 +514,22 @@ fun LstProductosContent(navController: NavHostController, modifier: Modifier) {
                         var respuesta : Response<String>
 
                         if (id == "") {
-                            respuesta = api.agregarProducto(nombre, precio.toDouble(), existencias.toInt())
+                            respuesta = api.agregarProducto(nombre, categoria.value.toInt(), precio.toDouble(), existencias.toInt())
 
                             if (respuesta.body() != "0") {
                                 Toast.makeText(context, "Producto agregado con éxito.", Toast.LENGTH_SHORT).show()
-                                productos.add( ModeloProducto(respuesta.body()?.toInt() ?: 0, nombre, precio.toDouble(), existencias.toInt()) )
+                                productos.add( ModeloProducto(respuesta.body()?.toInt() ?: 0, nombre, categoria.value.toInt(), categoria.label, precio.toDouble(), existencias.toInt()) )
                             }
                             else {
                                 Toast.makeText(context, "Agregado de producto incorrecto.", Toast.LENGTH_SHORT).show()
                             }
                         }
                         else {
-                            respuesta = api.modificarProducto(id.toInt(), nombre, precio.toDouble(), existencias.toInt())
+                            respuesta = api.modificarProducto(id.toInt(), nombre, categoria.value.toInt(), precio.toDouble(), existencias.toInt())
 
                             if (respuesta.body() == "correcto") {
                                 Toast.makeText(context, "Producto modificado con éxito.", Toast.LENGTH_SHORT).show()
-                                productos[index2.toInt()] = ModeloProducto(id.toInt(), nombre, precio.toDouble(), existencias.toInt())
+                                productos[index2.toInt()] = ModeloProducto(id.toInt(), nombre, categoria.value.toInt(), categoria.label, precio.toDouble(), existencias.toInt())
                             }
                             else {
                                 Toast.makeText(context, "Modificación de producto incorrecto.", Toast.LENGTH_SHORT).show()
@@ -488,6 +539,7 @@ fun LstProductosContent(navController: NavHostController, modifier: Modifier) {
                         index2      = ""
                         id          = ""
                         nombre      = ""
+                        categoria   = categoriaOpciones[0]
                         precio      = ""
                         existencias = ""
                     }
@@ -516,6 +568,7 @@ fun LstProductosContent(navController: NavHostController, modifier: Modifier) {
         Row {
             Text("Id", modifier = Modifier.width(150.dp), fontWeight = FontWeight.Bold)
             Text("Nombre", modifier = Modifier.width(150.dp), fontWeight = FontWeight.Bold)
+            Text("Categoria", modifier = Modifier.width(150.dp), fontWeight = FontWeight.Bold)
             Text("Precio", modifier = Modifier.width(100.dp), fontWeight = FontWeight.Bold)
             Text("Existencias", modifier = Modifier.width(100.dp), fontWeight = FontWeight.Bold)
             Text("Eliminar", modifier = Modifier.width(100.dp), fontWeight = FontWeight.Bold)
@@ -533,6 +586,9 @@ fun LstProductosContent(navController: NavHostController, modifier: Modifier) {
                     .width(150.dp)
                 )
                 Text(producto.nombre, modifier = Modifier
+                    .width(150.dp)
+                )
+                Text(producto.nombreCategoria, modifier = Modifier
                     .width(150.dp)
                 )
                 Text("$ ${producto.precio}", modifier = Modifier
